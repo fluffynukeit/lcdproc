@@ -109,6 +109,7 @@ spi_transfer(PrivateData *p, const unsigned char *outbuf, unsigned char *inbuf, 
  * \retval 0       Success.
  * \retval -1      Error.
  */
+static int rs_bit;
 int
 hd_init_spi(Driver *drvthis)
 {
@@ -117,6 +118,7 @@ hd_init_spi(Driver *drvthis)
 
 	char device[256] = DEFAULT_DEVICE;
 	char backlight_device[256] = "";
+	char rs_device[256] = "";
 
 	/* READ CONFIG FILE */
 
@@ -153,12 +155,39 @@ hd_init_spi(Driver *drvthis)
 		}
 	}
 
+	/* Set up the RS pin */
+	rs_bit = -1;
+	strncpy(rs_device, 
+		drvthis->config_get_string(drvthis->name, "RSDevice", 0, ""),
+		sizeof(rs_device));
+	rs_device[sizeof(rs_device)-1] = '\0';
+
+	if (strlen(rs_device) > 0) {
+		report(RPT_INFO, "HD44780: SPI: Using rs_device '%s'", rs_device);
+
+		rs_bit = open(rs_device, O_RDWR);
+		if (rs_bit < 0) {
+			report(RPT_ERR, "HD44780: SPI: open rs_device '%s' failed: %s",
+			       rs_device, strerror(errno));
+		}
+	}
+
 	hd44780_functions->senddata = spi_HD44780_senddata;
 	common_init(p, IF_8BIT);
 
 	return 0;
 }
 
+static void set_rs_bit(PrivateData *p, unsigned int on) 
+{
+	if (rs_bit != -1) {
+		unsigned char byte = (on) ? '1' : '0';
+		if (write(rs_bit, &byte, sizeof(byte)) < 0)
+			p->hd44780_functions->drv_report(RPT_ERR,
+					"HD44780: SPI: Cannot write to rs pin device: %d (%s)",
+					errno, strerror(errno));
+	}
+}
 
 /**
  * Send data or commands to the display.
@@ -170,26 +199,24 @@ hd_init_spi(Driver *drvthis)
 void
 spi_HD44780_senddata(PrivateData *p, unsigned char displayID, unsigned char flags, unsigned char ch)
 {
-	unsigned char buf[3];
-	unsigned char reverse;
+	unsigned char buf[1];
+	//unsigned char reverse;
 
 	p->hd44780_functions->drv_report(RPT_DEBUG, "HD44780: SPI: sending %s %02x",
 					 RS_INSTR == flags ? "CMD" : "DATA", ch);
 
-	if (flags == RS_INSTR)
-		buf[0] = SYNC;
-	else
-		buf[0] = SYNC | RS;
+	/* ST7036 */
+	//reverse = bit_reverse8(ch);
+	buf[0] = ch;
 
-	/* KS0073 wants Least Significant Bit first, with the added twist of
-	 * peculiar splitting of a byte across 4 nibbles. If we ever need to
-	 * read from the device, remember to bit_reverse8() each byte (note
-	 * that replies aren't split into nibbles). */
-	reverse = bit_reverse8(ch);
-	buf[1] = reverse & 0xF0;
-	buf[2] = (reverse & 0x0F) << 4;
+	if (flags == RS_INSTR) {
+		set_rs_bit(p, 0);
+	} else {
+		set_rs_bit(p, 1);
+	}
 
 	spi_transfer(p, buf, NULL, sizeof(buf));
+	set_rs_bit(p, 0);
 }
 
 
