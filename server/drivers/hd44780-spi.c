@@ -84,8 +84,10 @@ spi_transfer(PrivateData *p, const unsigned char *outbuf, unsigned char *inbuf, 
 	xfer.rx_buf = (unsigned long) inbuf;
 	xfer.len = length;
 
-	p->hd44780_functions->drv_debug(RPT_DEBUG, "SPI sending %02x %02x %02x",
-					outbuf[0], outbuf[1], length > 2 ? outbuf[2] : 0xFFu);
+	p->hd44780_functions->drv_debug(RPT_DEBUG, "SPI sending %02x %02x %02x"
+					, outbuf[0]
+					, length > 1 ? outbuf[1] : 0xFFU
+					, length > 2 ? outbuf[2] : 0xFFu);
 	status = ioctl(p->fd, SPI_IOC_MESSAGE(1), &xfer);
 	if (status < 0) {
 		p->hd44780_functions->drv_report(no_more_errormsgs ? RPT_DEBUG : RPT_ERR,
@@ -173,7 +175,29 @@ hd_init_spi(Driver *drvthis)
 	}
 
 	hd44780_functions->senddata = spi_HD44780_senddata;
-	common_init(p, IF_8BIT);
+	//common_init(p, IF_8BIT);
+	
+	// Don't use the common_init function.  Just copy commands for 8 bit 3.3V
+	// table in DOGM162W-A datasheet.
+	p->hd44780_functions->senddata(p, 0, RS_INSTR, 0b00111001);
+	p->hd44780_functions->uPause(p, 40);
+	p->hd44780_functions->senddata(p, 0, RS_INSTR, 0b00010100);
+	p->hd44780_functions->uPause(p, 40);
+	p->hd44780_functions->senddata(p, 0, RS_INSTR, 0b01010101);
+	p->hd44780_functions->uPause(p, 40);
+	p->hd44780_functions->senddata(p, 0, RS_INSTR, 0b01101101);
+	p->hd44780_functions->uPause(p, 40);
+	p->hd44780_functions->senddata(p, 0, RS_INSTR, 0b01111000);
+	p->hd44780_functions->uPause(p, 40);
+	p->hd44780_functions->senddata(p, 0, RS_INSTR, 0b00111000);
+	p->hd44780_functions->uPause(p, 40);
+	p->hd44780_functions->senddata(p, 0, RS_INSTR, 0b00001111);
+	p->hd44780_functions->uPause(p, 40);
+	p->hd44780_functions->senddata(p, 0, RS_INSTR, 0b00000001);
+	p->hd44780_functions->uPause(p, 1200);
+	p->hd44780_functions->senddata(p, 0, RS_INSTR, 0b00000110);
+	p->hd44780_functions->uPause(p, 40);
+	
 
 	return 0;
 }
